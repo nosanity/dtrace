@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'social_django',
     'rest_framework',
     'django_carrier_client',
+    'djcelery',
 ]
 
 MIDDLEWARE = [
@@ -192,5 +193,10 @@ KAFKA_PORT = 80
 KAFKA_TOKEN = ''
 KAFKA_PROTOCOL = 'http'
 
+MAX_MATERIALS_FOR_SYNC_GENERATION = 300
+MAX_PARALLEL_CSV_GENERATIONS = 5
+
 from .local_settings import *
 
+import djcelery
+djcelery.setup_loader()
