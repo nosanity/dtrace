@@ -24,6 +24,7 @@ celery==3.1.19
 django-celery==3.2.2
 django-user-agents==0.3.2
 django-mptt==0.9.1
+git+https://github.com/casbin/pycasbin@ecd0faef4ad35917215cb65a59a639ae96ee369d
 
 -e git+https://github.com/EduScaled/carrier-client@master#egg=carrier_client
 -e git+https://github.com/EduScaled/django-carrier-client@master#egg=django_carrier_client

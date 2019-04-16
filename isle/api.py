@@ -267,3 +267,6 @@ class SSOApi(BaseApi):
 
     def get_contexts(self):
         return self.django_paginated_request('/api/context/')
+
+    def get_policy(self):
+        return self.make_request_no_pagination('/api/get-policy/')

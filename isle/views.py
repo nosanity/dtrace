@@ -228,6 +228,9 @@ class GetEventMixin:
     def current_user_is_assistant(self):
         if not self.request.user.is_authenticated:
             return False
+        # from .casbin import get_enforcer
+        # e = get_enforcer()
+        # return e.enforce(str(self.request.user.unti_id), self.event.context, 'read')
         return self.request.user.is_assistant_for_context(self.event.context)
 
 

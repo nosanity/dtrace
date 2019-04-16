@@ -43,14 +43,16 @@ class User(AbstractUser):
         Проверка является ли пользователь ассистентом в контексте. Да, если у него есть роль ассистента
         в этом контексте или одном из его предков
         """
-        if not context:
+        if not context or not self.unti_id:
             return False
-        q = models.Q()
-        for context_uuid in context.get_ancestors(include_self=True).values_list('uuid', flat=True):
-            q |= models.Q(role__context_uuid=context_uuid)
-        return UserContextRole.active_objects.filter(
-            user=self, role__tag__slug__in=settings.ASSISTANT_TAGS_NAME
-        ).filter(q).exists()
+        # q = models.Q()
+        # for context_uuid in context.get_ancestors(include_self=True).values_list('uuid', flat=True):
+        #     q |= models.Q(role__context_uuid=context_uuid)
+        # return UserContextRole.active_objects.filter(
+        #     user=self, role__tag__slug__in=settings.ASSISTANT_TAGS_NAME
+        # ).filter(q).exists()
+        from .casbin import enforce
+        return enforce(str(self.unti_id), context.uuid)
 
     def has_assistant_role(self):
         return UserContextRole.active_objects.filter(
@@ -59,10 +61,12 @@ class User(AbstractUser):
 
     def is_global_assistant(self):
         ctx = Context.get_global_context()
-        if ctx:
-            return UserContextRole.active_objects.filter(
-                user=self, role__tag__slug__in=settings.ASSISTANT_TAGS_NAME, role__context_uuid=ctx.uuid
-            ).exists()
+        if ctx and self.unti_id:
+            from .casbin import enforce
+            return enforce(str(self.unti_id), ctx.uuid)
+            # return UserContextRole.active_objects.filter(
+            #     user=self, role__tag__slug__in=settings.ASSISTANT_TAGS_NAME, role__context_uuid=ctx.uuid
+            # ).exists()
         return False
 
     def get_available_context_uuids(self):
@@ -962,3 +966,12 @@ class CSVDump(models.Model):
 
     def get_download_link(self):
         return reverse('load_csv_dump', kwargs={'dump_id': self.id})
+
+
+class CasbinModel(models.Model):
+    config = models.TextField()
+
+
+class CasbinPolicy(models.Model):
+    model = models.ForeignKey(CasbinModel, on_delete=models.CASCADE)
+    policy = models.TextField()

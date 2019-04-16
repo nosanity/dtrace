@@ -20,7 +20,7 @@ import requests
 from isle.api import Api, ApiError, ApiNotFound, LabsApi, XLEApi, DpApi, SSOApi
 from isle.models import (Event, EventEntry, User, Trace, EventType, Activity, EventOnlyMaterial, ApiUserChart, Context,
                          LabsEventBlock, LabsEventResult, LabsUserResult, EventMaterial, MetaModel, EventTeamMaterial,
-                         Team)
+                         Team, CasbinModel, CasbinPolicy)
 
 DEFAULT_CACHE = caches['default']
 EVENT_TYPES_CACHE_KEY = 'EVENT_TYPE_IDS'
@@ -739,3 +739,14 @@ def get_csv_encoding_for_request(request):
         os_family = ''
     overridden_encoding = settings.CSV_ENCODING_FOR_OS.get(os_family.lower())
     return overridden_encoding or settings.DEFAULT_CSV_ENCODING
+
+
+def update_casbin_data():
+    try:
+        data = SSOApi().get_policy()
+        CasbinModel.objects.update_or_create(id=1, defaults={'config': data['model']})
+        CasbinPolicy.objects.update_or_create(id=1, defaults={'model_id': 1, 'policy': data['policy']})
+        return True
+    except Exception:
+        logging.exception('Failed to get casbin data')
+        return False
