@@ -1,0 +1,17 @@
+p, assistant, context1, file, upload, allow
+
+g, assistant, user, context1
+g2, context2, context1
+g2, context3, context2
+#g2, context4, context3
+#g2, context5, context4
+#g2, context6, context5
+#g2, context7, context6
+#g2, context8, context7
+#g2, context9, context8
+#g2, context10, context9
+#g2, context11, context10
+#g2, context12, context11
+#g2, context13, context12
+#g2, context14, context13
+#g2, context15, context14
