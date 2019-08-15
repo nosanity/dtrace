@@ -7,7 +7,7 @@ from carrier_client.message import OutgoingMessage
 from django_carrier_client.helpers import MessageManagerHelper
 from isle.api import SSOApi, ApiError
 from isle.models import LabsUserResult, LabsTeamResult, PLEUserResult
-from isle.utils import update_casbin_data
+from isle.utils import update_casbin_data, create_or_update_competence, create_or_update_metamodel
 
 
 message_manager = MessageManager(
@@ -124,6 +124,36 @@ class CasbinModelListener(KafkaBaseListener):
         update_casbin_data()
 
 
+class DPModelListener(KafkaBaseListener):
+    topic = settings.KAFKA_TOPIC_LABS
+    actions = [KafkaActions.CREATE, KafkaActions.UPDATE]
+    msg_type = 'model'
+
+    def _handle_for_id(self, obj_id, action):
+        try:
+            model_uuid = obj_id.get(self.msg_type).get('uuid')
+            assert model_uuid, 'failed to get model uuid from %s' % obj_id
+            create_or_update_metamodel(model_uuid)
+        except (AssertionError, AttributeError):
+            logging.exception('Got wrong object id from kafka: %s' % obj_id)
+
+
+class DPCompetenceListener(KafkaBaseListener):
+    topic = settings.KAFKA_TOPIC_LABS
+    actions = [KafkaActions.CREATE, KafkaActions.UPDATE]
+    msg_type = 'competence'
+
+    def _handle_for_id(self, obj_id, action):
+        try:
+            competence_uuid = obj_id.get(self.msg_type).get('uuid')
+            assert competence_uuid, 'failed to get competence uuid from %s' % obj_id
+            create_or_update_competence(competence_uuid)
+        except (AssertionError, AttributeError):
+            logging.exception('Got wrong object id from kafka: %s' % obj_id)
+
+
 MessageManagerHelper.set_manager_to_listen(SSOUserChangeListener())
 MessageManagerHelper.set_manager_to_listen(CasbinPolicyListener())
 MessageManagerHelper.set_manager_to_listen(CasbinModelListener())
+MessageManagerHelper.set_manager_to_listen(DPModelListener())
+MessageManagerHelper.set_manager_to_listen(DPCompetenceListener())

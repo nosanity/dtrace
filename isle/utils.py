@@ -488,6 +488,30 @@ def pull_sso_user(unti_id):
     return User.objects.filter(unti_id=unti_id).first()
 
 
+def create_or_update_metamodel(model_uuid):
+    try:
+        meta_data = DpApi().get_metamodel(model_uuid)
+        return MetaModel.objects.update_or_create(uuid=model_uuid, defaults={
+            'guid': meta_data['guid'], 'title': meta_data['title']
+        })[0]
+    except ApiError:
+        pass
+    except Exception:
+        logging.exception('Failed to get metamodel')
+
+
+def create_or_update_competence(competence_uuid):
+    try:
+        data = DpApi().get_competence(competence_uuid)
+        return DpCompetence.objects.update_or_create(uuid=competence_uuid, defaults={
+            'title': data['title']
+        })[0]
+    except ApiError:
+        pass
+    except Exception:
+        logging.exception('Failed to get competence')
+
+
 def recalculate_user_chart_data(user):
     """
     обновление данных для чарта компетенций пользователя

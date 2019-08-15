@@ -153,6 +153,9 @@ class DpApi(BaseApi):
     def get_metamodel(self, uuid):
         return self.make_request_no_pagination('/api/v1/model/{}'.format(uuid))
 
+    def get_competence(self, uuid):
+        return self.make_request_no_pagination('/api/v1/competence/')
+
 
 class SSOApi(BaseApi):
     name = 'sso'
