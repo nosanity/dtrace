@@ -812,6 +812,82 @@ def update_event_blocks(event_uuid):
         logging.exception('Failed to update structure for event %s', event_uuid)
 
 
+def create_or_update_event_entry(entry_uuid):
+    """
+    Создание записи на мероприятие по сигналу из кафки
+    """
+    try:
+        data = XLEApi().get_checkin(entry_uuid)
+        if data and (data.get('checkin') or data.get('attendance')):
+            event = Event.objects.filter(uid=data['event_uuid']).first()
+            if not event:
+                event = create_or_update_event(data['event_uuid'])
+            if not event:
+                logging.error('Got checkin for non existing event %s', data['event_uuid'])
+                return
+            user = User.objects.filter(unti_id=data['unti_id']).first()
+            if not user:
+                user = pull_sso_user(data['unti_id'])
+            if not user:
+                logging.error('Got checkin for non existing user %s', data['unti_id'])
+            return EventEntry.all_objects.update_or_create(user=user, event=event, defaults={'deleted': False})[0]
+    except Exception:
+        logging.exception('Failed to get checkin %s', entry_uuid)
+
+
+def create_or_update_run_enrollment(run_uuid, unti_id):
+    """
+    Создание записи на прогон по сигналу из кафки
+    """
+    try:
+        resp = XLEApi().get_timetable(run_uuid=run_uuid, unti_id=unti_id)
+        entry = None
+        for data in resp:
+            for item in data:
+                if item['run_uuid'] == run_uuid and item['unti_id'] == unti_id:
+                    entry = item
+                    break
+            if entry:
+                break
+        else:
+            return
+        run = Run.objects.filter(uuid=run_uuid).first()
+        if not run:
+            run = create_or_update_run(run_uuid)
+        if not run:
+            logging.error('Got timetalbe entry for non existing run %s', run_uuid)
+            return
+        user = User.objects.filter(unti_id=unti_id).first()
+        if not user:
+            user = pull_sso_user(unti_id)
+        if not user:
+            logging.error('Got timetalbe entry for non existing user %s', unti_id)
+            return
+        return RunEnrollment.all_objects.update_or_create(run=run, user=user, defaults={'deleted': False})[0]
+    except Exception:
+        logging.exception('Failed to get timetable entry %s, %s', run_uuid, unti_id)
+
+
+def delete_run_enrollment(run_uuid, unti_id):
+    """
+    Удаление записи на прогон по сигналу из кафки
+    """
+    try:
+        resp = XLEApi().get_timetable(run_uuid=run_uuid, unti_id=unti_id)
+        entry = None
+        for data in resp:
+            for item in data:
+                if item['run_uuid'] == run_uuid and item['unti_id'] == unti_id:
+                    entry = item
+                    break
+            if entry:
+                break
+        else:
+            RunEnrollment.objects.filter(run__uuid=run_uuid, user__unti_id=unti_id).update(deleted=True)
+    except:
+        logging.exception('Failed to delete timetable entry %s, %s', run_uuid, unti_id)
+
+
 def recalculate_user_chart_data(user):
     """
     обновление данных для чарта компетенций пользователя

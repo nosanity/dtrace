@@ -184,6 +184,7 @@ KAFKA_TOKEN = ''
 KAFKA_PROTOCOL = 'http'
 KAFKA_TOPIC_SSO = 'sso'
 KAFKA_TOPIC_LABS = 'labs'
+KAFKA_TOPIC_XLE = 'xle'
 
 # количество всех материалов в выбранных материалов, более которого генерация выгрузки должна идти асинхронно
 MAX_MATERIALS_FOR_SYNC_GENERATION = 500

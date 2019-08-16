@@ -147,13 +147,20 @@ class XLEApi(BaseApi):
             params['updated_at'] = updated_at
         return self.make_request('/api/v1/checkin', params=params)
 
-    def get_timetable(self, context=None, updated_at=None):
+    def get_timetable(self, context=None, updated_at=None, run_uuid=None, unti_id=None):
         params = {}
         if updated_at:
             params['updated_at'] = updated_at
         if context:
             params['context'] = context
+        if run_uuid:
+            params['run_uuid'] = run_uuid
+        if unti_id:
+            params['unti_id'] = unti_id
         return self.make_request('/api/v1/timetable', params=params)
+
+    def get_checkin(self, uuid):
+        return self.make_request_no_pagination('/api/v1/checkin/{}'.format(uuid))
 
 
 class DpApi(BaseApi):
