@@ -10,7 +10,7 @@ from isle.models import LabsUserResult, LabsTeamResult, PLEUserResult
 from isle.utils import update_casbin_data, create_or_update_competence, create_or_update_metamodel, \
     create_or_update_context, create_or_update_activity, delete_activity, create_or_update_run, delete_run, \
     create_or_update_event, delete_event, update_event_blocks, create_or_update_event_entry, delete_run_enrollment, \
-    create_or_update_run_enrollment
+    create_or_update_run_enrollment, create_or_update_team
 
 
 message_manager = MessageManager(
@@ -266,6 +266,20 @@ class XLERunEnrollmentListener(KafkaBaseListener):
             logging.exception('Got wrong object id from kafka: %s' % obj_id)
 
 
+class PTTeamListener(KafkaBaseListener):
+    topic = settings.KAFKA_TOPIC_PT
+    actions = [KafkaActions.CREATE, KafkaActions.UPDATE]
+    msg_type = 'team'
+
+    def _handle_for_id(self, obj_id, action):
+        try:
+            team_uuid = obj_id.get(self.msg_type).get('uuid')
+            assert team_uuid, 'failed to get team uuid from %s' % obj_id
+            create_or_update_team(team_uuid)
+        except (AssertionError, AttributeError):
+            logging.exception('Got wrong object id from kafka: %s' % obj_id)
+
+
 MessageManagerHelper.set_manager_to_listen(SSOUserChangeListener())
 MessageManagerHelper.set_manager_to_listen(CasbinPolicyListener())
 MessageManagerHelper.set_manager_to_listen(CasbinModelListener())
@@ -278,3 +292,4 @@ MessageManagerHelper.set_manager_to_listen(LABSEventListener())
 MessageManagerHelper.set_manager_to_listen(LABSEventBlockListener())
 MessageManagerHelper.set_manager_to_listen(XLECheckinListener())
 MessageManagerHelper.set_manager_to_listen(XLERunEnrollmentListener())
+MessageManagerHelper.set_manager_to_listen(PTTeamListener())

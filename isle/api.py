@@ -197,3 +197,6 @@ class PTApi(BaseApi):
 
     def fetch_teams(self):
         return self.make_request('/api/v1/team')
+
+    def get_team(self, uuid):
+        return self.make_request_no_pagination('/api/v1/team/{}'.format(uuid))

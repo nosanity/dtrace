@@ -5,6 +5,7 @@ import logging
 import os
 import pytz
 from collections import defaultdict, OrderedDict
+from functools import partial
 from io import StringIO
 from urllib.parse import quote
 from datetime import datetime
@@ -888,6 +889,16 @@ def delete_run_enrollment(run_uuid, unti_id):
         logging.exception('Failed to delete timetable entry %s, %s', run_uuid, unti_id)
 
 
+def create_or_update_team(team_uuid):
+    try:
+        data = PTApi().get_team(team_uuid)
+        ct_uuid_to_id = dict(Context.objects.values_list('uuid', 'id'))
+        unti_id_to_id = dict(User.objects.filter(unti_id__isnull=False).values_list('unti_id', 'id'))
+        update_pt_team(data, partial(context_getter, ct_uuid_to_id), unti_id_to_id, set())
+    except Exception:
+        logging.exception('Failed to get team %s', team_uuid)
+
+
 def recalculate_user_chart_data(user):
     """
     обновление данных для чарта компетенций пользователя
@@ -1005,49 +1016,54 @@ def update_teams():
         return
     try:
         context_uuid_to_id = dict(Context.objects.values_list('uuid', 'id'))
+        fn = partial(lambda ct_map, ct_uuid: ct_map.get(ct_uuid), context_uuid_to_id)
         unti_id_to_id = dict(User.objects.filter(unti_id__isnull=False).values_list('unti_id', 'id'))
         failed_unti_ids = set()
         for resp in PTApi().fetch_teams():
             for item in resp:
-                context_ids = set()
-                for ct in item['contexts']:
-                    ct_id = context_uuid_to_id.get(ct['uuid'])
-                    if ct_id is None:
-                        logging.error('Context with uuid %s not found', ct['uuid'])
-                        continue
-                    context_ids.add(ct_id)
-                user_ids = set()
-                for u in item['users']:
-                    if u['unti_id'] in failed_unti_ids:
-                        continue
-                    user_id = unti_id_to_id.get(u['unti_id'])
-                    if user_id is None:
-                        user = pull_sso_user(u['unti_id'])
-                        if not user:
-                            failed_unti_ids.add(u['unti_id'])
-                            logging.error('User with unti_id %s not found', u['unti_id'])
-                            continue
-                        unti_id_to_id[u['unti_id']] = user.id
-                        user_id = user.id
-                    user_ids.add(user_id)
-                if not context_ids:
-                    logging.error('PT team %s has no valid contexts', item['uuid'])
-                    continue
-                if not user_ids:
-                    logging.error('PT team %s has no valid users', item['uuid'])
-                    continue
-                team = Team.objects.update_or_create(uuid=item['uuid'], defaults={
-                    'name': item['title'],
-                    'system': Team.SYSTEM_PT
-                })[0]
-                team_contexts = set(team.contexts.values_list('id', flat=True))
-                if context_ids != team_contexts:
-                    team.contexts.set(context_ids)
-                team_users = set(team.users.values_list('id', flat=True))
-                if user_ids != team_users:
-                    team.users.set(user_ids)
+                update_pt_team(item, fn, unti_id_to_id, failed_unti_ids)
     except Exception:
         logging.exception('Failed to fetch teams')
+
+
+def update_pt_team(item, context_getter_fn, unti_id_to_id, failed_unti_ids):
+    context_ids = set()
+    for ct in item['contexts']:
+        ct_id = context_getter_fn(ct['uuid'])
+        if ct_id is None:
+            logging.error('Context with uuid %s not found', ct['uuid'])
+            continue
+        context_ids.add(ct_id)
+    user_ids = set()
+    for u in item['users']:
+        if u['unti_id'] in failed_unti_ids:
+            continue
+        user_id = unti_id_to_id.get(u['unti_id'])
+        if user_id is None:
+            user = pull_sso_user(u['unti_id'])
+            if not user:
+                failed_unti_ids.add(u['unti_id'])
+                logging.error('User with unti_id %s not found', u['unti_id'])
+                continue
+            unti_id_to_id[u['unti_id']] = user.id
+            user_id = user.id
+        user_ids.add(user_id)
+    if not context_ids:
+        logging.error('PT team %s has no valid contexts', item['uuid'])
+        return
+    if not user_ids:
+        logging.error('PT team %s has no valid users', item['uuid'])
+        return
+    team = Team.objects.update_or_create(uuid=item['uuid'], defaults={
+        'name': item['title'],
+        'system': Team.SYSTEM_PT
+    })[0]
+    team_contexts = set(team.contexts.values_list('id', flat=True))
+    if context_ids != team_contexts:
+        team.contexts.set(context_ids)
+    team_users = set(team.users.values_list('id', flat=True))
+    if user_ids != team_users:
+        team.users.set(user_ids)
 
 
 def get_results_list(event=None):
