@@ -7,7 +7,9 @@ from carrier_client.message import OutgoingMessage
 from django_carrier_client.helpers import MessageManagerHelper
 from isle.api import SSOApi, ApiError
 from isle.models import LabsUserResult, LabsTeamResult, PLEUserResult
-from isle.utils import update_casbin_data, create_or_update_competence, create_or_update_metamodel
+from isle.utils import update_casbin_data, create_or_update_competence, create_or_update_metamodel, \
+    create_or_update_context, create_or_update_activity, delete_activity, create_or_update_run, delete_run, \
+    create_or_update_event, delete_event, update_event_blocks
 
 
 message_manager = MessageManager(
@@ -152,8 +154,92 @@ class DPCompetenceListener(KafkaBaseListener):
             logging.exception('Got wrong object id from kafka: %s' % obj_id)
 
 
+class LABSContextListener(KafkaBaseListener):
+    topic = settings.KAFKA_TOPIC_LABS
+    actions = [KafkaActions.CREATE, KafkaActions.UPDATE]
+    msg_type = 'context'
+
+    def _handle_for_id(self, obj_id, action):
+        try:
+            context_uuid = obj_id.get(self.msg_type).get('uuid')
+            assert context_uuid, 'failed to get context uuid from %s' % obj_id
+            create_or_update_context(context_uuid)
+        except (AssertionError, AttributeError):
+            logging.exception('Got wrong object id from kafka: %s' % obj_id)
+
+
+class LABSActivityListener(KafkaBaseListener):
+    topic = settings.KAFKA_TOPIC_LABS
+    actions = [KafkaActions.CREATE, KafkaActions.UPDATE, KafkaActions.DELETE]
+    msg_type = 'activity'
+
+    def _handle_for_id(self, obj_id, action):
+        try:
+            activity_uuid = obj_id.get(self.msg_type).get('uuid')
+            assert activity_uuid, 'failed to get activity uuid from %s' % obj_id
+            if action != KafkaActions.DELETE:
+                create_or_update_activity(activity_uuid)
+            else:
+                delete_activity(activity_uuid)
+        except (AssertionError, AttributeError):
+            logging.exception('Got wrong object id from kafka: %s' % obj_id)
+
+
+class LABSRunListener(KafkaBaseListener):
+    topic = settings.KAFKA_TOPIC_LABS
+    actions = [KafkaActions.CREATE, KafkaActions.UPDATE, KafkaActions.DELETE]
+    msg_type = 'run'
+
+    def _handle_for_id(self, obj_id, action):
+        try:
+            run_uuid = obj_id.get(self.msg_type).get('uuid')
+            assert run_uuid, 'failed to get run uuid from %s' % obj_id
+            if action != KafkaActions.DELETE:
+                create_or_update_run(run_uuid)
+            else:
+                delete_run(run_uuid)
+        except (AssertionError, AttributeError):
+            logging.exception('Got wrong object id from kafka: %s' % obj_id)
+
+
+class LABSEventListener(KafkaBaseListener):
+    topic = settings.KAFKA_TOPIC_LABS
+    actions = [KafkaActions.CREATE, KafkaActions.UPDATE, KafkaActions.DELETE]
+    msg_type = 'event'
+
+    def _handle_for_id(self, obj_id, action):
+        try:
+            event_uuid = obj_id.get(self.msg_type).get('uuid')
+            assert event_uuid, 'failed to get event uuid from %s' % obj_id
+            if action != KafkaActions.DELETE:
+                create_or_update_event(event_uuid)
+            else:
+                delete_event(event_uuid)
+        except (AssertionError, AttributeError):
+            logging.exception('Got wrong object id from kafka: %s' % obj_id)
+
+
+class LABSEventBlockListener(KafkaBaseListener):
+    topic = settings.KAFKA_TOPIC_LABS
+    actions = [KafkaActions.CREATE, KafkaActions.UPDATE, KafkaActions.DELETE]
+    msg_type = 'block'
+
+    def _handle_for_id(self, obj_id, action):
+        try:
+            event_uuid = obj_id.get('event', {}).get('uuid')
+            assert event_uuid, 'failed to get event uuid from %s' % obj_id
+            update_event_blocks(event_uuid)
+        except (AssertionError, AttributeError):
+            logging.exception('Got wrong object id from kafka: %s' % obj_id)
+
+
 MessageManagerHelper.set_manager_to_listen(SSOUserChangeListener())
 MessageManagerHelper.set_manager_to_listen(CasbinPolicyListener())
 MessageManagerHelper.set_manager_to_listen(CasbinModelListener())
 MessageManagerHelper.set_manager_to_listen(DPModelListener())
 MessageManagerHelper.set_manager_to_listen(DPCompetenceListener())
+MessageManagerHelper.set_manager_to_listen(LABSContextListener())
+MessageManagerHelper.set_manager_to_listen(LABSActivityListener())
+MessageManagerHelper.set_manager_to_listen(LABSRunListener())
+MessageManagerHelper.set_manager_to_listen(LABSEventListener())
+MessageManagerHelper.set_manager_to_listen(LABSEventBlockListener())
