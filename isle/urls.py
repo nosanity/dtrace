@@ -68,6 +68,7 @@ urlpatterns = [
     path('<str:uid>/teams/', team.EventTeams.as_view(), name='event-teams'),
     path('<str:uid>/summary/autosave/', upload.SummaryAutosave.as_view(), name='summary-autosave'),
     path('<str:uid>/summary/delete/', upload.SummaryDelete.as_view(), name='summary-delete'),
+    path('<str:uid>/summary/get/', upload.GetSummary.as_view(), name='get-full-summary'),
 ]
 
 if settings.DEBUG:
