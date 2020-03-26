@@ -9,12 +9,10 @@ export LOG_LEVEL=${LOG_LEVEL:-"WARNING"}
 
 if [ "${MIGRATION}" == 1 ] || [ "${MIGRATION}" == 'TRUE' ] ||  [ "${MIGRATION}" == 'true' ] || [ "${MIGRATION}" == 'True' ]; then
     # Migarations
-#    ./manage.py makemigrations
     ./manage.py migrate
     # Build static and localization
-#    echo "start  Build static and localization"
-#    ./manage.py collectstatic
-#    ./manage.py compilemessages
+    echo "start  Build static and localization"
+    ./manage.py collectstatic --noinput
 #Create Admin user
 #    ./manage.py create_admin_user
 # Replace Domain in site tab (in admin panel)
