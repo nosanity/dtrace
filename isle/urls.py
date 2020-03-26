@@ -54,6 +54,7 @@ urlpatterns = [
     path('api/all-team-results/', api_views.AllTeamResultsView.as_view()),
     path('api/get-dp-data/', api_views.GetDpData.as_view()),
     path('api/check/', api_views.ApiCheckHealth.as_view()),
+    path('api/check/<str:sys_type>/', api_views.ApiCheckHealth.as_view()),
     path('api/upload-user-file/', api_views.UploadUserFile.as_view()),
     path('api/upload/create-user-result/', api_views.CreateUserResultAPI.as_view()),
     path('api/get-ple-user-result/<int:result_id>/', api_views.GetPLEUserResultApi.as_view(), name='api-ple-result'),

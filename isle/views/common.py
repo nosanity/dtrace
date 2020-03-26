@@ -72,7 +72,7 @@ class GetEventMixinWithAccessCheck(GetEventMixin):
         })
 
 
-class ApiPermission(SwaggerBasePermission, BasePermission):
+class BaseApiKeyPermission(SwaggerBasePermission, BasePermission):
     _swagger_security_definition = {
         'type': 'apiKey',
         'name': 'x-api-key',
@@ -84,10 +84,13 @@ class ApiPermission(SwaggerBasePermission, BasePermission):
         if request.method == 'OPTIONS':
             return True
         api_key = getattr(settings, 'API_KEY', '')
-        key = request.META.get('HTTP_X_API_KEY')
+        key = self.get_key_from_request(request)
         if key and api_key and key == api_key:
             return True
         return False
+
+    def get_key_from_request(self, request):
+        pass
 
 
 class IsAuthenticatedCustomized(SwaggerBasePermission, IsAuthenticated):
@@ -97,6 +100,22 @@ class IsAuthenticatedCustomized(SwaggerBasePermission, IsAuthenticated):
         if request.method == 'OPTIONS':
             return True
         return super().has_permission(request, view)
+
+
+class ApiPermission(BaseApiKeyPermission):
+    def get_key_from_request(self, request):
+        return request.META.get('HTTP_X_API_KEY')
+
+
+class ApiKeyGetPermission(BaseApiKeyPermission):
+    _swagger_security_definition = {
+        'type': 'apiKey',
+        'name': 'x-api-key',
+        'in': 'query',
+    }
+
+    def get_key_from_request(self, request):
+        return request.query_params.get('x-api-key')
 
 
 class CustomLimitOffsetPagination(LimitOffsetPagination):
