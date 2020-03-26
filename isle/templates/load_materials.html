@@ -44,7 +44,7 @@
                             <div class="uploads"></div>
                         </div>
                         <div class="tab-pane fade" id="v-pills-profile" role="tabpanel" aria-labelledby="v-pills-profile-tab">
-                            <input type="url" name="url_field" class="form-control full-width" id="url" placeholder="Укажите URL-ссылку на материал">
+                            <input type="url" maxlength="1000" name="url_field" class="form-control full-width" id="url" placeholder="Укажите URL-ссылку на материал">
                         </div>
                         <div class="tab-pane fade {% if draft_summary %}show active{% endif %}" id="v-pills-summary" role="tabpanel" aria-labelledby="v-pills-profile-tab">
                             <textarea name="summary" class="form-control full-width ckedit" id="summary" {% if draft_summary %}data-draft-id="{{ draft_summary.id }}{% endif %}">
@@ -123,12 +123,12 @@
                             <div class="col-sm-2">
                             {% if can_upload %}
                                 {% if request.user.unti_id and link.initiator == request.user.unti_id or is_assistant %}
-                                    <span name="material_id" value="{{ link.id }}" class="glyphicon glyphicon-remove result-action-buttons pull-right delete-material-btn">
+                                    <span name="material_id" value="{{ link.id }}" class="btn glyphicon glyphicon-remove result-action-buttons pull-right delete-material-btn">
                                     </span>
                                 {% endif %}
                                 {% can_edit_summary link as can_edit %}
                                 {% if is_assistant or can_edit %}
-                                    <span value="{{ link.id }}" {% if link.summary %}data-is-summary="true" data-can-edit="{% if link.initiator == request.user.unti_id %}true{% else %}false{% endif %}" data-type="event" data-file-id="{{ link.id }}"{% endif %} class="glyphicon glyphicon-pencil result-action-buttons pull-right edit-event-block-material">
+                                    <span value="{{ link.id }}" {% if link.summary %}data-is-summary="true" data-can-edit="{% if link.initiator == request.user.unti_id %}true{% else %}false{% endif %}" data-type="event" data-file-id="{{ link.id }}"{% endif %} class="btn glyphicon glyphicon-pencil result-action-buttons pull-right edit-event-block-material">
                                     </span>
                                 {% endif %}
                             {% endif %}

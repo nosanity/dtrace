@@ -12,42 +12,52 @@
                 <strong>{% trans "Мероприятие:" %}</strong> {{ event.title }}
                 <br>
                 {% localtime off %}{{ event.get_dt_start|date:'d E, H:i' }}{% endlocaltime %}
+        {% for block in blocks %}
+            {% if block|show_block %}
+	        {% if forloop.first %}
+		    <br>
+                    <b>{% trans "Деятельность:" %}</b> {{ block.description }}
+		{% endif %}
+	    {% endif %}
+	{% endfor %}
             </p>
         </div>
         <div class="col-lg-4">
-            <form id="event_dtrace_filter_form">
+            <form id="event_dtrace_filter_form" class="mt-3 mb-2">
                 {{ form.non_field_errors }}
                 {% for field in filter_form %}
                     {% if field.errors %}
                         {{ field.errors }}
                     {% endif %}
                     {% if field.name == 'only_my' %}
-                        <div class="checkbox">{{ field }} <label>{{ field.label }}</label></div>
+                        <div class="checkbox">{{ field }} <label for="id_{{ field.name }}">{{ field.label }}</label></div>
                     {% else %}
-                        {{ field|add_class:'form-control' }}
+                        {{ field|add_class:'form-control mb-10' }}
                     {% endif %}
                 {% endfor %}
-                <div class="form-group mt-10">
-                    <button type="submit" class="btn btn-success">{% trans 'Фильтровать' %}</button>
+                <div class="form-group mb-0">
+                    <button type="submit" class="btn btn-success mr-1">{% trans 'Фильтровать' %}</button>
                     <a type="submit" class="btn btn-danger" href="{% url 'event-dtrace' uid=event.uid %}">{% trans 'Сброс' %}</a>
                 </div>
             </form>
         </div>
     </div>
     {% if not is_enrolled %}
-        <button class="btn btn-success self-enroll-btn mb-2">{% trans "Загрузить цифровой след" %}</button>
+        <button class="btn btn-success self-enroll-btn">{% trans "Загрузить цифровой след" %}</button>
     {% endif %}
     <div>
         {% for block in blocks %}
             {% if block|show_block %}
             <div class="block-div mt-40">
-		    <h4>{% blocktrans with n=block.order %}{{ n }}. {% endblocktrans %}{{block.title }}
+		    <h4>{%comment%}{% blocktrans with n=block.order %}{{ n }}. {% endblocktrans %}{{block.title }} {%endcomment %}
                     {% if block.deleted %} ({% blocktrans %}Удалено{% endblocktrans %}){% endif %}</h4>
+		    {% comment %}
                 <p>
                     <b>{% trans "Тип:" %}</b> {{ block.block_type }}
                     <br>
                     <b>{% trans "Деятельность:" %}</b> {{ block.description }}
                 </p>
+		    {% endcomment %}
                 {% include 'includes/result_type_constraint.html' %}
                 {% for result in block.results.all %}
                 {% if result|show_result %}
@@ -57,9 +67,13 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <p>
+			            {% comment %}
                                     <b>{% trans "Формат работы:" %}</b> {{ result.result_format }}
+			            {% endcomment %}
                                     <br>
+			            {% comment %}
                                     <b>{% trans "Способ фиксации:" %}</b> {{ result.fix }}
+			            {% endcomment %}
                                 </p>
                             </div>
                             <div class="col-md-6">

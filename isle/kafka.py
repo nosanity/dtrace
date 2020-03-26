@@ -143,10 +143,29 @@ class XLECheckinListener(KafkaBaseListener):
                     return
                 try:
                     event = Event.objects.get(uid=checkin_data.get('event_uuid'))
-                except (Event.DoesNotExist, TypeError):
-                    logging.error('Event with uuid "%s" not found' % checkin_data.get('event_uuid'))
+                    EventEntry.objects.update_or_create(user=user, event=event, defaults={'deleted': False})
+                except Event.DoesNotExist:
+                    from isle.tasks import create_event_entry_for_non_exiting_event
+                    create_event_entry_for_non_exiting_event(checkin_data.get('event_uuid'), user.id)
+                except TypeError:
+                    logging.error('Wrong value type for event uuid: "%s"' % checkin_data.get('event_uuid'))
                     return
-                EventEntry.objects.update_or_create(user=user, event=event, defaults={'deleted': False})
+        except (AssertionError, AttributeError):
+            logging.error('Got wrong object id from kafka: %s' % obj_id)
+
+
+class XLEEventBlockResultListener(KafkaBaseListener):
+    actions = (KafkaActions.CREATE, KafkaActions.UPDATE, KafkaActions.DELETE)
+    topic = settings.XLE_TOPIC
+    msg_type = 'block_result'
+
+    def _handle_for_id(self, obj_id, action):
+        from .tasks import fetch_event
+        try:
+            assert isinstance(obj_id, dict)
+            event_uuid = obj_id.get('event', {}).get('uuid')
+            assert event_uuid
+            fetch_event.delay(event_uuid)
         except (AssertionError, AttributeError):
             logging.error('Got wrong object id from kafka: %s' % obj_id)
 
@@ -156,8 +175,15 @@ class CasbinPolicyListener(KafkaBaseListener):
     actions = (KafkaActions.CREATE, KafkaActions.DELETE, KafkaActions.UPDATE)
     msg_type = 'casbin_policy'
 
-    def _handle_for_id(self, obj_id, action):
-        update_casbin_data()
+    def handle_message(self, msg):
+        if msg.get_topic() == self.topic:
+            try:
+                payload = msg.get_payload()
+                if payload.get('type') == self.msg_type and payload.get('action') in self.actions and payload.get('id'):
+                    policy = payload['title']
+                    update_casbin_data(update_rule=policy)
+            except MessageManagerException:
+                logging.error('Got incorrect json from kafka: %s' % msg._value)
 
 
 class CasbinModelListener(KafkaBaseListener):
@@ -188,3 +214,4 @@ MessageManagerHelper.set_manager_to_listen(XLECheckinListener())
 MessageManagerHelper.set_manager_to_listen(CasbinPolicyListener())
 MessageManagerHelper.set_manager_to_listen(CasbinModelListener())
 MessageManagerHelper.set_manager_to_listen(OpenapiTokenListener())
+MessageManagerHelper.set_manager_to_listen(XLEEventBlockResultListener())

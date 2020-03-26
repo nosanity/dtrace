@@ -116,7 +116,7 @@ if (eventUpload) {
         }
         }).delegate('.cancel-block-edit', 'click', (e) => {
             e.preventDefault();
-            let summary_input = $obj.parents('form').find('textarea[name=summary]')
+            let summary_input = $(e.target).parents('form').find('textarea[name=summary]')
             if (summary_input.length) {
                 CKEDITOR.instances[summary_input.attr('id')].destroy();
             }

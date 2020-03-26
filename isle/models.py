@@ -20,14 +20,17 @@ from django.utils.html import strip_tags
 from django.utils.translation import ugettext_lazy as _
 import bleach
 from jsonfield import JSONField
-from .cache import UserAvailableContexts
+from .cache import get_user_available_contexts
+from .fields import SafeUTF8Text
 
 
-def check_permission(user, context, obj_type='file', action='upload'):
+def check_permission(user, context, obj_type='file', action='upload', check_global_context=True):
     from .casbin import enforce
     if not user.unti_id or not context:
         return False
-    return enforce(str(user.unti_id), context, obj_type, action)
+    global_perm = check_global_context and \
+                  enforce(str(user.unti_id), settings.CASBIN_SPECIAL_CONTEXT_UID, obj_type, action)
+    return global_perm or enforce(str(user.unti_id), context, obj_type, action)
 
 
 class User(AbstractUser):
@@ -43,7 +46,7 @@ class User(AbstractUser):
         verbose_name_plural = _(u'Пользователи')
 
     def __str__(self):
-        return '%s %s' % (self.unti_id, self.get_full_name())
+        return '%s %s' % (self.leader_id, self.get_full_name())
 
     @property
     def fio(self):
@@ -52,16 +55,16 @@ class User(AbstractUser):
     def get_full_name(self):
         return ' '.join(filter(None, [self.last_name, self.first_name]))
 
-    def is_assistant_for_context(self, context):
-        return check_permission(self, context and context.uuid)
+    def is_assistant_for_context(self, context, check_global_context=True):
+        context_uuid = context if isinstance(context, str) else context and context.uuid
+        return check_permission(self, context_uuid, check_global_context=check_global_context)
 
     def has_assistant_role(self):
-        ctx = UserAvailableContexts.get(self) or []
-        return bool(ctx)
+        return bool(self.available_context_uuids)
 
     @cached_property
     def available_context_uuids(self):
-        return [c for c in Context.objects.values_list('uuid', flat=True) if check_permission(self, c)]
+        return get_user_available_contexts(self)
 
 
 class EventType(models.Model):
@@ -500,7 +503,7 @@ class TeamResult(ResultAbstract):
 
 
 class BaseMaterial(models.Model):
-    url = models.URLField(blank=True)
+    url = models.URLField(blank=True, max_length=1000)
     file = models.FileField(blank=True, max_length=300)
     file_type = models.CharField(max_length=1000, default='')
     file_size = models.PositiveIntegerField(default=None, null=True)
@@ -894,7 +897,7 @@ class AbstractResult(models.Model):
     общие поля для персональных/командных результатов
     """
     result = models.ForeignKey(LabsEventResult, on_delete=models.CASCADE)
-    comment = models.TextField(default='')
+    comment = SafeUTF8Text(default='')
     approved = models.NullBooleanField(default=None)
     approve_text = models.CharField(max_length=255, default='')
     circle_items = models.ManyToManyField('CircleItem')
@@ -996,7 +999,6 @@ class ModelCompetence(models.Model):
     model = models.ForeignKey('MetaModel', on_delete=models.CASCADE, related_name='competences')
     competence = models.ForeignKey('DpCompetence', on_delete=models.CASCADE, related_name='models')
     order = models.IntegerField()
-    type = models.ForeignKey(DPType, on_delete=models.CASCADE)
 
     class Meta:
         unique_together = ('model', 'competence')
@@ -1018,6 +1020,7 @@ class MetaModel(models.Model):
 class DpCompetence(models.Model):
     uuid = models.CharField(max_length=50, unique=True)
     title = models.CharField(max_length=500)
+    type = models.IntegerField(null=True, default=None)
 
     def __str__(self):
         return self.title
@@ -1088,6 +1091,7 @@ class UserFile(BaseMaterial, models.Model):
 class CasbinData(models.Model):
     model = models.TextField()
     policy = models.TextField()
+    model_version = models.IntegerField(default=1)
 
 
 class PLEUserResult(models.Model):
@@ -1222,6 +1226,7 @@ class UpdateTimes(models.Model):
     EVENT_STRUCTURE = 'event_structure'
     EVENT_RUN_ACTIVITY = 'event_run_activity'
     PT_TEAMS = 'pt_teams'
+    ALL_EVENTS = 'all_events'
 
     event_type = models.CharField(max_length=255, unique=True, primary_key=True)
     dt = models.DateTimeField()
@@ -1261,7 +1266,7 @@ class Summary(models.Model):
     result_limit_models = models.Q(app_label='isle', model='Trace') | \
                           models.Q(app_label='isle', model='LabsEventResult')
 
-    content = models.TextField(blank=True)
+    content = SafeUTF8Text(blank=True)
     author = models.ForeignKey(User, on_delete=models.CASCADE)
     is_draft = models.BooleanField(default=True)
     event = models.ForeignKey(Event, on_delete=models.CASCADE)

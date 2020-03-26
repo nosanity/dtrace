@@ -264,6 +264,8 @@ DEFAULT_TRACE_DATA_JSON = [
    }
 ]
 
+CASBIN_SPECIAL_CONTEXT_UID = '*'
+
 from os import getenv
 from split_settings.tools import include
 settings_path = getenv('UPLOADS_SETTINGS_PATH', 'local_settings.py')
@@ -288,9 +290,6 @@ DWH_DATABASES = {
     'dp': locals().get('DWH_DP_DB_NAME', 'dp'),
     'pt': locals().get('DWH_PT_DB_NAME', 'people'),
 }
-
-import djcelery
-djcelery.setup_loader()
 
 LOGGING = {
     'version': 1,
