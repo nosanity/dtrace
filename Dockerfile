@@ -5,7 +5,18 @@ MAINTAINER EvgeniyBondarenko "Bondarenko.Hub@gmail.com"
 WORKDIR /opt
 EXPOSE 80
 ENTRYPOINT ["./docker-entrypoint.sh" ]
-CMD gunicorn -w 3 -b 0.0.0.0:80 wsgi:application --forwarded-allow-ips=*  --access-logfile '-' --log-level ${LOG_LEVEL}
+CMD gunicorn -b 0.0.0.0:80 wsgi:application \
+                                --forwarded-allow-ips=* \
+                                --preload \
+                                --threads ${gunicorn_threads} \
+                                --workers ${gunicorn_workers} \
+                                --worker-connections ${gunicorn_worker_connections} \
+                                --max-requests ${gunicorn_max_requests} \
+                                --max-requests-jitter ${gunicorn_max_requests_jitter} \
+                                --timeout ${gunicorn_timeout} \
+                                --graceful-timeout ${gunicorn_graceful_timeout} \
+                                --access-logfile '-' \
+                                --log-level ${LOG_LEVEL}
 
 RUN apt-get update && \
     apt-get install -y  python-dev \
@@ -38,7 +49,7 @@ RUN if [ "$GITHUB_TOKEN" != "" ] ; then \
         && rm ~/.netrc; \
     fi
 
-ADD docker-entrypoint.sh manage.py  wsgi.py  ./
+ADD docker-entrypoint.sh manage.py  wsgi.py release ./
 ADD settings  ./settings
 ADD isle      ./isle
 
