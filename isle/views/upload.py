@@ -11,7 +11,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied, ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import Q, Count
-from django.http import JsonResponse, HttpResponseForbidden
+from django.http import JsonResponse, HttpResponseForbidden, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404
 from django.template.loader import get_template
 from django.urls import reverse
@@ -150,6 +150,7 @@ class BaseLoadMaterials(TemplateView):
         data['initiator'] = request.user.unti_id
         material = self.material_model.objects.create(**data)
         if file_:
+            # chunked upload
             material.file.save(self.make_file_path(file_.name), file_)
         resp = {
             'material_id': material.id,
@@ -1369,3 +1370,199 @@ class GetSummary(GetEventMixin, View):
         except (ObjectDoesNotExist, AssertionError, TypeError, ValueError):
             return JsonResponse({}, status=400)
         return JsonResponse({'text': obj.summary.content, 'id': obj.summary_id})
+
+
+
+from chunked_upload.views import ChunkedUploadView, ChunkedUploadCompleteView
+from django.core.files.base import ContentFile
+# TODO: check permissions
+
+
+class LabsResultChunkUploadPermissionChecker:
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        result_id_error, result_deleted, type_ok = self._check_labs_result_id(request)
+        if result_id_error is not None or result_deleted or not type_ok:
+            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST, detail='bad data')
+
+from django.core.files.storage import default_storage
+from storages.backends.s3boto3 import S3Boto3Storage
+from isle.models import CustomizedChunkedUpload, s3_client
+from chunked_upload.views import ChunkedUploadError, http_status, Response
+
+
+
+class FileChunkUploadBase(ChunkedUploadView):
+    model = CustomizedChunkedUpload
+
+    def get(self, request, *args, **kwargs):
+        return HttpResponseNotAllowed(['post'])
+
+    def check_permissions(self, request):
+        if not request.POST.get('upload_id'):
+            resp = self.check_post_allowed(request)
+            if resp is not None:
+                raise ChunkedUploadError(status=http_status.HTTP_403_FORBIDDEN, detail='access denied')
+
+    def _post(self, request, *args, **kwargs):
+        chunk = request.FILES.get(self.field_name)
+        if chunk is None:
+            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
+                                     detail='No chunk file was submitted')
+        self.validate(request)
+
+        upload_id = request.POST.get('upload_id')
+        if upload_id:
+            chunked_upload = get_object_or_404(self.get_queryset(request),
+                                               upload_id=upload_id)
+            self.is_valid_chunked_upload(chunked_upload)
+        else:
+            attrs = {'filename': chunk.name}
+            if hasattr(request, 'user') and request.user.is_authenticated:
+                attrs['user'] = request.user
+            attrs.update(self.get_extra_attrs(request))
+            chunked_upload = self.create_chunked_upload(save=False, **attrs)
+
+        content_range = request.META.get(self.content_range_header, '')
+        # match = self.content_range_pattern.match(content_range)
+        # if match:
+        if 'resumableTotalSize' in request.POST:
+            # start = int(match.group('start'))
+            start = (int(request.POST['resumableChunkNumber']) - 1)* int(request.POST['resumableChunkSize'])
+            # end = int(match.group('end'))
+            end = start + int(request.POST['resumableCurrentChunkSize']) - 1
+            # total = int(match.group('total'))
+            total = int(request.POST['resumableTotalSize'])
+            part = int(request.POST['resumableChunkNumber'])
+        elif self.fail_if_no_header:
+            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
+                                     detail='Error in request headers')
+        else:
+            # Use the whole size when HTTP_CONTENT_RANGE is not provided
+            start = 0
+            end = chunk.size - 1
+            total = chunk.size
+
+        chunk_size = end - start + 1
+        max_bytes = self.get_max_bytes(request)
+
+        if max_bytes is not None and total > max_bytes:
+            raise ChunkedUploadError(
+                status=http_status.HTTP_400_BAD_REQUEST,
+                detail='Size of file exceeds the limit (%s bytes)' % max_bytes
+            )
+        if chunked_upload.offset != start:
+            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
+                                     detail='Offsets do not match',
+                                     offset=chunked_upload.offset)
+        if chunk.size != chunk_size:
+            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
+                                     detail="File size doesn't match headers")
+
+        chunked_upload.append_chunk(chunk, chunk_size=chunk_size, save=False, part=part)
+
+        self._save(chunked_upload)
+
+        return Response(self.get_response_data(chunked_upload, request),
+                        status=http_status.HTTP_200_OK)
+
+    def create_chunked_upload(self, save=False, **attrs):
+        # import pdb;pdb.set_trace()
+        file_name = self.make_file_path(attrs['filename'])
+        if isinstance(default_storage, S3Boto3Storage):
+            attrs['s3_upload_key'] = file_name
+            client = s3_client()
+            bucket_name = settings.AWS_STORAGE_BUCKET_NAME
+            multipart = client.create_multipart_upload(
+                Bucket=bucket_name,
+                Key=file_name,
+                ContentType='',
+            )
+            attrs['s3_upload_id'] = multipart['UploadId']
+            chunked_upload = self.model(**attrs)
+        else:
+            chunked_upload = self.model(**attrs)
+            chunked_upload.file.save(name=file_name, content=ContentFile(''), save=save)
+        return chunked_upload
+
+
+class FileChunkUploadUserResult(FileChunkUploadBase, LabsResultChunkUploadPermissionChecker, LoadUserMaterialsResult):
+    pass
+
+
+class FileChunkUploadTeamResult(FileChunkUploadBase, LabsResultChunkUploadPermissionChecker, LoadTeamMaterialsResult):
+    pass
+
+
+class FileChunkUploadEventResult(FileChunkUploadBase, LoadEventMaterials):
+    pass
+
+
+class FileChunkUploadCompleteBase(ChunkedUploadCompleteView):
+    model = CustomizedChunkedUpload
+    def get(self, request, *args, **kwargs):
+        return HttpResponseNotAllowed(['post'])
+
+    def get_response_data(self, chunked_upload, request):
+        # import pdb;pdb.set_trace()
+        result_key, result_value = self.get_result_key_and_value(request)
+        if not result_value:
+            raise Exception('')
+        data = self.get_material_fields(request)
+        data[result_key] = result_value
+        # file_ = request.FILES.get('file_field')
+        # data.update({'file_type': file_.content_type, 'file_size': file_.size})
+        data['initiator'] = request.user.unti_id
+        data['file'] = chunked_upload.file.name
+        material = self.material_model.objects.create(**data)
+        # if file_:
+        #     material.file.save(self.make_file_path(file_.name), file_)
+        resp = {
+            'material_id': material.id,
+            'url': material.get_url(),
+            'name': material.get_name(),
+            'comment': getattr(material, 'comment', ''),
+            'is_public': getattr(material, 'is_public', True),
+            'data_attrs': material.render_metadata(),
+            'summary': material.get_short_summary(),
+            'can_set_public': self._can_set_public()
+        }
+        self.update_add_item_response(resp, material, result_value)
+        if self.extra_context and self.extra_context.get('team_upload'):
+            resp['uploader_name'] = request.user.fio
+        return resp
+
+    def check_permissions(self, request):
+        resp = self.check_post_allowed(request)
+        if resp is not None:
+            raise ChunkedUploadError(status=http_status.HTTP_403_FORBIDDEN, detail='access denied')
+
+    def post_save(self, chunked_upload, request, new=False):
+        from isle.models import S3ChunkUploadPart
+        parts = [
+            {
+                'PartNumber': part[0],
+                'ETag': part[1],
+            } for part in S3ChunkUploadPart.objects.filter(upload_id=chunked_upload.id).order_by('part').values_list('part', 'tag')
+        ]
+        client = s3_client()
+        _result = client.complete_multipart_upload(
+            Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+            Key=chunked_upload.s3_upload_key,
+            UploadId=chunked_upload.s3_upload_id,
+            MultipartUpload={
+                'Parts': parts
+            }
+        )
+
+
+class FileChunkUploadCompleteUserResult(FileChunkUploadCompleteBase, LabsResultChunkUploadPermissionChecker, LoadUserMaterialsResult):
+    pass
+
+
+class FileChunkUploadCompleteTeamResult(FileChunkUploadCompleteBase, LabsResultChunkUploadPermissionChecker, LoadTeamMaterialsResult):
+    pass
+
+
+class FileChunkUploadCompleteEventResult(FileChunkUploadCompleteBase, LoadEventMaterials):
+    pass

@@ -204,6 +204,7 @@ function addUploadProgress($form, fileField) {
     const name = fileField.name;
     const rowNum = counter++;
     const html = `
+        <div id="fineuploader${rowNum}"></div>
         <div class="row upload-row" data-row-number="${rowNum}">
             <div class="col-lg-3 uploads-name">
                 <span class="uploaded-file-name">${name}</span>
@@ -1506,6 +1507,31 @@ function get_requestUrl(form) {
 }
 
 function processFile(form, file, filesLength, result_item_id) {
+    const chunk_size = 1024 * 1024 * 5;
+    let md5 = '';
+    var slice = File.prototype.slice || File.prototype.mozSlice || File.prototype.webkitSlice,
+      chunks = chunks = Math.ceil(file.size / chunk_size),
+      current_chunk = 0,
+      spark = new SparkMD5.ArrayBuffer();
+    function onload(e) {
+      spark.append(e.target.result);  // append chunk
+      current_chunk++;
+      if (current_chunk < chunks) {
+        read_next_chunk();
+      } else {
+        md5 = spark.end();
+      }
+    };
+    function read_next_chunk() {
+      var reader = new FileReader();
+      reader.onload = onload;
+      var start = current_chunk * chunk_size,
+        end = Math.min(start + chunk_size, file.size);
+      reader.readAsArrayBuffer(slice.call(file, start, end));
+    };
+    read_next_chunk();
+
+    console.log('processFile')
     const $form = $(form);
     const formData = new FormData($(form).get(0));
     formData.delete('url_field');
@@ -1518,35 +1544,93 @@ function processFile(form, file, filesLength, result_item_id) {
     if (pageType == 'loadMaterials_v2' || pageType == 'event_dtrace')
         formData.append('result_item_id', result_item_id);
     const num = filesLength ? addUploadProgress($form, file) : null;
-    requestUrl = get_requestUrl(form);
-    $.ajax({
-        type: 'POST',
-        data: formData,
-        processData: false,
-        contentType: false,
-        url: requestUrl,
-        xhr: () => {
-            // xhrProcessFile(num);
-            const xhr = new window.XMLHttpRequest();
-            if (num > -1) {
-                xhr.upload.addEventListener("progress", (e) => {
-                    if (e.lengthComputable) {
-                        const percentComplete = parseInt((e.loaded / e.total) * 100);
-                        $(`div.upload-row[data-row-number="${num}"]`).find('.progress-bar').css('width', percentComplete + '%');
-                    }
-                }, false);
-            }  
-            return xhr;            
-        },
-        success: (data) => {
-            completeProcessFile(num, $form);
-            successProcessFile(data, $form, result_item_id);
-        },
-        error: (xhr, err) => {
-            errorProcessFile(xhr, err);
-            completeProcessFile(num, $form);
+    requestUrl = (get_requestUrl(form) || window.location.pathname) + 'file-upload/';
+    console.log('url', requestUrl)
+    requestCompleteUrl = requestUrl + 'complete/';
+    let resp_data = {
+        csrfmiddlewaretoken: csrfmiddlewaretoken
+    }
+    for (let i of formData.entries()) {
+        if (i[0] != 'file_field')
+            resp_data[i[0]] = i[1]
+    }
+    let uploader = new Resumable({
+        target: requestUrl,
+        simultaneousUploads: 1,
+        testChunks: false,
+        query: resp_data,
+        chunkSize: chunk_size
+    })
+    uploader.on('fileAdded', () => {
+        uploader.upload();
+    })
+    uploader.on('fileProgress', (resumableObj, resp) => {
+        if (resp) {
+            let resp_json = $.parseJSON(resp);
+            // console.log('current',resumableObj.resumableObj.opts.query.upload_id,resp_json.upload_id, resp && resp_json.upload_id && !resumableObj.resumableObj.opts.query.upload_id)
+            if (resp_json && resp_json.upload_id && !resumableObj.resumableObj.opts.query.upload_id) {
+                resumableObj.resumableObj.opts.query.upload_id = resp_json.upload_id;
+                resp_data.upload_id = resp_json.upload_id;
+                // console.log('set upload_id', resumableObj.resumableObj.opts.query)
+                // uploader.updateQuery(get_parameters)
+            }
         }
     })
+    uploader.on('complete', (q,w,e) => {
+        console.log('complete', resp_data, md5)
+        let complete_data = {
+            'csrfmiddlewaretoken': csrfmiddlewaretoken,
+            'upload_id': resp_data.upload_id,
+            'md5': md5,
+        }
+        for (let i of formData.entries()) {
+            // console.log('entry', i)
+            if (i[0] != 'file_field')
+                complete_data[i[0]] = i[1]
+        }
+        console.log('complete data', complete_data)
+        $.ajax({
+            type: 'POST',
+            url: requestCompleteUrl,
+            data: complete_data,
+            success: (data) => {
+                console.log(data);
+                completeProcessFile(num, $form);
+                successProcessFile(data, $form, result_item_id);
+            }
+        })
+
+    })
+    uploader.addFile(file);
+
+    // $.ajax(
+    //     type: 'POST',
+    //     data: formData,
+    //     processData: false,
+    //     contentType: false,
+    //     url: requestUrl,
+    //     xhr: () => {
+    //         // xhrProcessFile(num);
+    //         const xhr = new window.XMLHttpRequest();
+    //         if (num > -1) {
+    //             xhr.upload.addEventListener("progress", (e) => {
+    //                 if (e.lengthComputable) {
+    //                     const percentComplete = parseInt((e.loaded / e.total) * 100);
+    //                     $(`div.upload-row[data-row-number="${num}"]`).find('.progress-bar').css('width', percentComplete + '%');
+    //                 }
+    //             }, false);
+    //         }
+    //         return xhr;
+    //     },
+    //     success: (data) => {
+    //         completeProcessFile(num, $form);
+    //         successProcessFile(data, $form, result_item_id);
+    //     },
+    //     error: (xhr, err) => {
+    //         errorProcessFile(xhr, err);
+    //         completeProcessFile(num, $form);
+    //     }
+    // })
 }
 
 function get_form_upload_type(form) {

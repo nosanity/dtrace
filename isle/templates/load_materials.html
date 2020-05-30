@@ -163,6 +163,8 @@
 
 {% block js %}
     {{ block.super }}
+    <script type="text/javascript" src="{% static 'js/libs/spark-md5.js' %}"></script>
+    <script type="text/javascript" src="{% static 'js/libs/resumable.js' %}"></script>
     <script type="text/javascript">
         const pageType = "loadMaterials";
         const isAssistant = eval("{{ is_assistant|lower }}");

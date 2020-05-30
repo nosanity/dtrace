@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'django_celery_results',
     'django_user_agents',
     'dynamic_formsets',
+    'chunked_upload',
 ]
 
 MIDDLEWARE = [
@@ -363,3 +364,5 @@ if locals().get('LOGSTASH_HOST') and locals().get('LOGSTASH_PORT'):
         'tags': tags,
         'fqdn': locals().get('LOGSTASH_FQDN', False),
     }
+
+CHUNKED_UPLOAD_TO = ''

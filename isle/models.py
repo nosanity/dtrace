@@ -1311,3 +1311,80 @@ class DpTool(models.Model):
 
     def __str__(self):
         return self.title
+
+
+import boto3
+
+class S3Wrapper(object):
+    """
+    A wrapper around the S3 client ensuring only one client is instantiated and reused.
+    """
+    _s3_client = None
+
+    @classmethod
+    def get_client(cls):
+        if not cls._s3_client:
+            extra_kwargs = {}
+            if getattr(settings, 'AWS_S3_ENDPOINT_URL', None):
+                extra_kwargs['endpoint_url'] = settings.AWS_S3_ENDPOINT_URL
+
+            cls._s3_client = boto3.client(
+                's3',
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                # region_name=settings.AWS_REGION,
+                **extra_kwargs)
+        return cls._s3_client
+
+
+def s3_client():
+    """
+    A handy method to get a reusable S3 client
+    """
+    return S3Wrapper.get_client()
+
+
+from chunked_upload.models import AbstractChunkedUpload
+from django.core.files.storage import default_storage
+from storages.backends.s3boto3 import S3Boto3Storage
+
+class S3ChunkUploadPart(models.Model):
+    upload = models.ForeignKey('CustomizedChunkedUpload', on_delete=models.CASCADE)
+    part = models.IntegerField()
+    tag = models.CharField(max_length=255)
+
+from chunked_upload.views import ChunkedUploadError
+
+
+class CustomizedChunkedUpload(AbstractChunkedUpload):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='customized_chunked_uploads', null=True, blank=True)
+    s3_upload_id = models.CharField(max_length=255, default='')
+    s3_upload_key = models.CharField(max_length=255, default='')
+
+    def append_chunk(self, chunk, chunk_size=None, save=True, part=None):
+        if isinstance(default_storage, S3Boto3Storage):
+            client = s3_client()
+            data = chunk.read()
+            try:
+                res = client.upload_part(
+                    Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+                    Key=self.s3_upload_key,
+                    PartNumber=part,
+                    UploadId=self.s3_upload_id,
+                    Body=data,
+                    # ContentLength=len(chunk.read()),
+                    ContentLength=chunk.tell(),
+                )
+            except:
+                raise ChunkedUploadError(status=500, detail='s3 connection error')
+            if chunk_size is not None:
+                self.offset += chunk_size
+            elif hasattr(chunk, 'size'):
+                self.offset += chunk.size
+            self._md5 = None  # Clear cached md5
+            if save:
+                self.save()
+                S3ChunkUploadPart.objects.create(upload_id=self.id, part=part, tag=res['ETag'])
+        else:
+            super().append_chunk(chunk, chunk_size=chunk_size, save=save)
+
